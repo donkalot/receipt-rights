@@ -59,6 +59,17 @@ test('business purchase: covered under $100k, or above it if commonly personal',
   assert.equal(ACL.assess(tractor, { ...base, use: 'business' }, TODAY).covered, false);
   assert.equal(ACL.assess(tractor, { ...base, use: 'business', commonlyPersonal: true }, TODAY).covered, true);
   assert.equal(ACL.assess(kettle, { ...base, use: 'business' }, TODAY).covered, true);
+  // s 3(1)(a): "did not exceed" the prescribed amount, so exactly $100k is covered.
+  assert.equal(ACL.assess({ ...kettle, price: 100000 }, { ...base, use: 'business' }, TODAY).covered, true);
+  assert.equal(ACL.assess({ ...kettle, price: 100000.01 }, { ...base, use: 'business' }, TODAY).covered, false);
+});
+
+test('business cap was $40k for purchases before 1 July 2021', () => {
+  const ute = { ...kettle, price: 60000, purchaseDate: '2021-06-30' };
+  const r = ACL.assess(ute, { ...base, use: 'business' }, TODAY);
+  assert.equal(r.covered, false);
+  assert.match(r.reasons.join(' '), /\$40,000/);
+  assert.equal(ACL.assess({ ...ute, purchaseDate: '2021-07-01' }, { ...base, use: 'business' }, TODAY).covered, true);
 });
 
 test('fault I caused removes acceptable quality but leaves other guarantees', () => {

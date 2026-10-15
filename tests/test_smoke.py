@@ -146,3 +146,27 @@ def test_html_is_escaped(page, server):
     page.get_by_role('button', name='Save').click()
     expect(page.locator('h2')).to_have_text('<img src=x onerror=alert(1)>')
     assert page.locator('main img[src="x"]').count() == 0
+
+
+def test_calendar_reminders_download(page, server):
+    import datetime
+    page.goto(server + '#/item/new')
+    page.fill('#name', 'Dyson vacuum')
+    page.fill('#price', '899')
+    page.fill('#purchaseDate', datetime.date.today().isoformat())
+    page.select_option('#category', 'small_appliance')
+    page.fill('#warrantyMonths', '24')
+    page.get_by_role('button', name='Save').click()
+    with page.expect_download() as dl:
+        page.get_by_role('button', name='Add reminders to calendar').click()
+    assert dl.value.suggested_filename == 'dyson-vacuum-reminders.ics'
+    ics = open(dl.value.path(), encoding='utf-8', newline='').read()
+    assert ics.count('BEGIN:VEVENT') == 2
+    assert 'SUMMARY:Warranty on Dyson vacuum ends' in ics
+    assert '#/item/' in ics.replace('\r\n ', '')
+
+    page.goto(server + '#/settings')
+    with page.expect_download() as dl:
+        page.get_by_role('button', name='Download reminders for all receipts').click()
+    assert dl.value.suggested_filename == 'receipt-rights-reminders.ics'
+    assert page.errors == []

@@ -1,5 +1,5 @@
-const CACHE = 'receipt-rights-v1';
-const APP_SHELL = ['./', './index.html', './acl.js', './app.js', './manifest.json', './icon.svg', './icon-maskable.svg'];
+const CACHE = 'receipt-rights-v2';
+const APP_SHELL = ['./', './index.html', './acl.js', './reminders.js', './app.js', './manifest.json', './icon.svg', './icon-maskable.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(APP_SHELL)));

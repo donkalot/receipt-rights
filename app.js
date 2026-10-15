@@ -75,6 +75,23 @@
     setTimeout(() => t.remove(), 2600);
   }
   function go(hash) { location.hash = hash; }
+  function download(content, type, filename) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function slug(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item';
+  }
+  function reminders(item) {
+    return Reminders.remindersFor(item, {
+      today: today(),
+      categoryYears: (CATEGORIES[item.category] || {}).years,
+      url: location.href.split('#')[0] + `#/item/${item.id}`,
+    });
+  }
   function formData(form) {
     const out = {};
     for (const el of form.elements) {
@@ -275,6 +292,7 @@
     const item = await getItem(id);
     if (!item) return go('#/');
     const age = ACL.monthsBetween(item.purchaseDate, today());
+    const events = reminders(item);
     $app.innerHTML = `
       <p class="no-print"><a href="#/">← All receipts</a></p>
       <div class="card">
@@ -288,11 +306,16 @@
         <div class="row" style="margin-top:16px">
           <a class="btn primary" href="#/item/${esc(item.id)}/claim">${item.claim ? 'Review my claim' : "It's broken or faulty"}</a>
           <a class="btn" href="#/item/${esc(item.id)}/edit">Edit</a>
+          ${events.length ? '<button id="cal" type="button">Add reminders to calendar</button>' : ''}
           <button class="danger" id="del" type="button">Delete</button>
         </div>
       </div>
       ${disclaimer()}`;
     wireAttachmentTiles(document.getElementById('photos'), item.photos || [], () => {});
+    if (events.length) document.getElementById('cal').addEventListener('click', () => {
+      download(Reminders.buildIcs(events, new Date()), 'text/calendar', `${slug(item.name)}-reminders.ics`);
+      toast(`${events.length} reminder${events.length === 1 ? '' : 's'} downloaded`);
+    });
     document.getElementById('del').addEventListener('click', async () => {
       if (!confirm(`Delete "${item.name}" and its photos? This can't be undone.`)) return;
       await deleteItem(item.id);
@@ -346,7 +369,7 @@
           ${radios('sellerType', [['business', 'A business (shop, online store, manufacturer)'], ['private', 'A private person (e.g. Marketplace, Gumtree)'], ['auction', 'An auction run by an auctioneer']], a.sellerType)}</div>
           <div><strong>What did you buy it for?</strong>
           ${radios('use', [['personal', 'Personal or household use'], ['business', 'My business']], a.use)}</div>
-          ${Number(item.price) >= ACL.BUSINESS_USE_CAP ? check('commonlyPersonal', 'Goods like this are commonly bought for personal or household use', a.commonlyPersonal) : ''}
+          ${Number(item.price) > ACL.businessUseCap(item.purchaseDate) ? check('commonlyPersonal', 'Goods like this are commonly bought for personal or household use', a.commonlyPersonal) : ''}
           ${check('boughtForResale', 'I bought it to resell, or to use up in making or repairing other goods', a.boughtForResale)}
           ${check('causedByMe', 'The damage was caused by me — misuse, an accident, or using it in an unusual way', a.causedByMe)}
           ${check('toldBeforeBuying', 'The seller pointed out this exact problem before I bought it', a.toldBeforeBuying)}
@@ -465,6 +488,11 @@
         <div class="row" style="margin-top:16px"><button class="primary" type="submit">Save</button></div>
       </form>
       <div class="card">
+        <h3 style="margin-top:0">Calendar reminders</h3>
+        <p class="muted">One file with a reminder before each warranty ends and before each item reaches the age you'd expect it to last. Open it to add them to your calendar.</p>
+        <button id="cal-all" type="button">Download reminders for all receipts</button>
+      </div>
+      <div class="card">
         <h3 style="margin-top:0">Backup</h3>
         <p class="muted">Your receipts are stored only in this browser. Browsers can clear site data — especially Safari on iPhone if you don't open the app for a while — so download a backup now and then.</p>
         <div class="row">
@@ -483,12 +511,15 @@
       toast('Saved');
       if (back && back.startsWith('#/')) go(back);
     });
+    document.getElementById('cal-all').addEventListener('click', async () => {
+      const events = (await allItems()).flatMap(reminders);
+      if (!events.length) return toast('No upcoming warranty or lifespan dates');
+      download(Reminders.buildIcs(events, new Date()), 'text/calendar', 'receipt-rights-reminders.ics');
+      toast(`${events.length} reminder${events.length === 1 ? '' : 's'} downloaded`);
+    });
     document.getElementById('export').addEventListener('click', async () => {
-      const blob = new Blob([JSON.stringify({ app: 'receipt-rights', version: 1, exportedAt: new Date().toISOString(), profile: loadProfile(), items: await allItems() })], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `receipt-rights-backup-${today()}.json`;
-      a.click();
+      download(JSON.stringify({ app: 'receipt-rights', version: 1, exportedAt: new Date().toISOString(), profile: loadProfile(), items: await allItems() }),
+        'application/json', `receipt-rights-backup-${today()}.json`);
       localStorage.setItem(BACKUP_KEY, String(Date.now()));
       toast('Backup downloaded');
     });

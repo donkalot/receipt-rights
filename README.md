@@ -12,12 +12,15 @@ manufacturer.
 
 - **Receipt vault** — item, store, price, date, warranty length, photos or PDFs of the receipt.
   Search, and a warranty status on each one.
+- **Calendar reminders** — an `.ics` file with a reminder two weeks before the warranty ends and a
+  month before the item reaches the age you'd expect it to last, so you raise a fault while it still
+  counts. No server or push notifications; your own calendar does it.
 - **Claim check** — a short set of questions mapped to the law:
   - which guarantee was breached (s 54 acceptable quality, s 55 fitness for a disclosed purpose,
     s 56 description, s 57 sample)
   - whether it's a **major failure** (each limb of s 260(1), plus s 260(2) for multiple problems)
   - whether you can still reject the goods (s 262 — lifespan, disposal)
-  - who's covered at all: private sales, auctions, resale, business purchases over $100k, pre-2011
+  - who's covered at all: private sales, auctions, resale, business purchases over $100k ($40k before July 2021), pre-2011
   - exceptions for damage you caused (s 54(6)) and defects pointed out before sale (s 54(4))
 - **Claim letter** — cites the guarantee, the major-failure limb and the remedy section, asks for
   the right thing (refund/replacement for major, repair-first for minor, s 259(2)(b) escalation if
@@ -42,6 +45,6 @@ last?" are judgement calls, and the app takes your answers at face value.
 ## Tests
 
 ```
-node --test tests/acl.test.js     # legal logic: coverage, major/minor, remedies, letter
-pytest tests/test_smoke.py        # Playwright: add receipt → claim → letter, backup round-trip, XSS
+node --test tests/acl.test.js tests/reminders.test.js   # legal logic, letter, .ics output
+pytest tests/test_smoke.py        # Playwright: add receipt → claim → letter, backup, reminders, XSS
 ```

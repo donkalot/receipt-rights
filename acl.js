@@ -3,7 +3,11 @@
 (function (root) {
   'use strict';
 
+  // s 3(1)(a): $40,000 in the Act, raised to $100,000 by regulation for acquisitions from 1 July 2021.
   const BUSINESS_USE_CAP = 100000;
+  const OLD_BUSINESS_USE_CAP = 40000;
+  const CAP_RAISED = '2021-07-01';
+  const businessUseCap = purchaseDate => (purchaseDate < CAP_RAISED ? OLD_BUSINESS_USE_CAP : BUSINESS_USE_CAP);
   const ACL_START = '2011-01-01';
   const RESPONSE_DAYS = 14;
 
@@ -88,8 +92,9 @@
     if (a.sellerType === 'private') reasons.push('Most consumer guarantees do not apply to a one-off private sale by someone not in business (only the guarantee of clear title does).');
     if (a.sellerType === 'auction') reasons.push('Most consumer guarantees do not apply to goods bought at a traditional auction run by an agent for the seller.');
     if (a.boughtForResale) reasons.push('Goods bought to resell, or to use up or transform in production or repair, are not bought "as a consumer".');
-    if (a.use === 'business' && Number(item.price) >= BUSINESS_USE_CAP && !a.commonlyPersonal) {
-      reasons.push(`Business purchases are only covered if they cost under ${money(BUSINESS_USE_CAP)}, or are a kind commonly bought for personal or household use.`);
+    const cap = businessUseCap(item.purchaseDate);
+    if (a.use === 'business' && Number(item.price) > cap && !a.commonlyPersonal) {
+      reasons.push(`Business purchases made then are only covered if they cost ${money(cap)} or less, or are a kind commonly bought for personal or household use (s 3(1)).`);
     }
     return { covered: reasons.length === 0, reasons };
   }
@@ -278,7 +283,7 @@
   }
 
   const api = {
-    AGENCIES, GUARANTEES, BUSINESS_USE_CAP, RESPONSE_DAYS,
+    AGENCIES, GUARANTEES, BUSINESS_USE_CAP, businessUseCap, RESPONSE_DAYS,
     coverage, assess, buildLetter, warrantyStatus,
     monthsBetween, addDays, addMonths, formatDate, formatAge, money,
   };
