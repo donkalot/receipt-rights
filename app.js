@@ -82,6 +82,22 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
+  function reminderWhen(events) {
+    return events.map(e => (e.uid.endsWith('-warranty') ? 'before the warranty ends' : 'before it reaches the age you\'d expect it to last')).join(' and ');
+  }
+  // Anonymous counts of fixed event names only; never item names, prices or IDs.
+  const ANALYTICS = 'https://receipt-rights.goatcounter.com/count';
+  function track(name) {
+    if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: name, title: name, event: true });
+  }
+  function loadAnalytics() {
+    if (location.hostname !== 'donkalot.github.io') return;
+    const s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://gc.zgo.at/count.js';
+    s.dataset.goatcounter = ANALYTICS;
+    document.head.appendChild(s);
+  }
   function slug(s) {
     return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item';
   }
@@ -190,7 +206,7 @@
             <a class="btn primary" href="#/item/new">Add a receipt</a>
             <a class="btn" href="#/item/new?claim=1">Something's broken now</a>
           </p>
-          <p class="muted">Everything stays on this device. Nothing is uploaded.</p>
+          <p class="muted">Your receipts stay on this device and are never uploaded. No account needed.</p>
         </div>
         ${disclaimer()}`;
       return;
@@ -284,17 +300,26 @@
         receiptRef: d.receiptRef.trim(), notes: d.notes, photos, updatedAt: Date.now(),
       });
       await putItem(saved);
-      go(thenClaim ? `#/item/${saved.id}/claim` : `#/item/${saved.id}`);
+      if (!existing) track('receipt-saved');
+      go(thenClaim ? `#/item/${saved.id}/claim` : `#/item/${saved.id}${existing ? '' : '?saved=1'}`);
     });
   }
 
-  async function viewItem(id) {
+  async function viewItem(id, justSaved) {
     const item = await getItem(id);
     if (!item) return go('#/');
     const age = ACL.monthsBetween(item.purchaseDate, today());
     const events = reminders(item);
+    const offer = justSaved && events.length;
     $app.innerHTML = `
       <p class="no-print"><a href="#/">← All receipts</a></p>
+      ${offer ? `<div class="card notice" id="offer">
+        <strong>Saved.</strong> Want a reminder in your calendar ${esc(reminderWhen(events))}? Faults are easiest to claim while they're fresh.
+        <div class="row" style="margin-top:10px">
+          <button class="primary cal" type="button">Add reminders to calendar</button>
+          <button id="no-offer" type="button">No thanks</button>
+        </div>
+      </div>` : ''}
       <div class="card">
         <h2 style="margin-top:0">${esc(item.name)}</h2>
         <p class="muted" style="margin:0">${esc(item.store || 'Unknown store')} · ${esc(ACL.money(item.price || 0))}</p>
@@ -306,16 +331,24 @@
         <div class="row" style="margin-top:16px">
           <a class="btn primary" href="#/item/${esc(item.id)}/claim">${item.claim ? 'Review my claim' : "It's broken or faulty"}</a>
           <a class="btn" href="#/item/${esc(item.id)}/edit">Edit</a>
-          ${events.length ? '<button id="cal" type="button">Add reminders to calendar</button>' : ''}
+          ${events.length && !offer ? '<button class="cal" type="button">Add reminders to calendar</button>' : ''}
           <button class="danger" id="del" type="button">Delete</button>
         </div>
       </div>
       ${disclaimer()}`;
     wireAttachmentTiles(document.getElementById('photos'), item.photos || [], () => {});
-    if (events.length) document.getElementById('cal').addEventListener('click', () => {
+    const dismissOffer = () => {
+      if (!offer) return;
+      history.replaceState(null, '', `#/item/${item.id}`);
+      viewItem(item.id);
+    };
+    $app.querySelectorAll('.cal').forEach(b => b.addEventListener('click', () => {
       download(Reminders.buildIcs(events, new Date()), 'text/calendar', `${slug(item.name)}-reminders.ics`);
       toast(`${events.length} reminder${events.length === 1 ? '' : 's'} downloaded`);
-    });
+      track('reminders-item');
+      dismissOffer();
+    }));
+    if (offer) document.getElementById('no-offer').addEventListener('click', dismissOffer);
     document.getElementById('del').addEventListener('click', async () => {
       if (!confirm(`Delete "${item.name}" and its photos? This can't be undone.`)) return;
       await deleteItem(item.id);
@@ -406,6 +439,7 @@
       d.stillHaveIt = d.stillHaveIt !== 'no';
       item.claim = { answers: d, assessedOn: today() };
       await putItem(item);
+      track('claim-checked');
       go(`#/item/${item.id}/result`);
     });
   }
@@ -462,15 +496,17 @@
     if (!r.covered) return;
     const text = () => document.getElementById('letter').innerText;
     document.getElementById('copy').addEventListener('click', async () => {
+      track('letter-copy');
       try { await navigator.clipboard.writeText(text()); toast('Letter copied'); }
       catch { toast('Copy failed — select the letter and copy it manually'); }
     });
     document.getElementById('email').addEventListener('click', () => {
+      track('letter-email');
       const subject = `Claim under the Australian Consumer Law — ${item.name}`;
       const body = text().split('\n').filter(l => !l.startsWith('Subject:')).join('\n');
       location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     });
-    document.getElementById('print').addEventListener('click', () => window.print());
+    document.getElementById('print').addEventListener('click', () => { track('letter-print'); window.print(); });
   }
 
   function viewSettings(back) {
@@ -515,6 +551,7 @@
       const events = (await allItems()).flatMap(reminders);
       if (!events.length) return toast('No upcoming warranty or lifespan dates');
       download(Reminders.buildIcs(events, new Date()), 'text/calendar', 'receipt-rights-reminders.ics');
+      track('reminders-all');
       toast(`${events.length} reminder${events.length === 1 ? '' : 's'} downloaded`);
     });
     document.getElementById('export').addEventListener('click', async () => {
@@ -545,7 +582,7 @@
   }
 
   function disclaimer() {
-    return `<p class="disclaimer">General information about the Australian Consumer Law, not legal advice. It covers goods bought from a business, not services, and every case depends on its facts. For help, contact your state or territory consumer protection agency or a community legal centre. Your data never leaves this device.</p>`;
+    return `<p class="disclaimer">General information about the Australian Consumer Law, not legal advice. It covers goods bought from a business, not services, and every case depends on its facts. For help, contact your state or territory consumer protection agency or a community legal centre. Your receipts and letters never leave this device; the site counts anonymous visits (no cookies, nothing about your purchases).</p>`;
   }
 
   // ---------- router ----------
@@ -561,7 +598,7 @@
         if (parts[2] === 'edit') return await viewEdit(parts[1], false);
         if (parts[2] === 'claim') return await viewClaim(parts[1]);
         if (parts[2] === 'result') return await viewResult(parts[1]);
-        return await viewItem(parts[1]);
+        return await viewItem(parts[1], params.get('saved') === '1');
       }
       return await viewList();
     } catch (err) {
@@ -575,6 +612,7 @@
   document.getElementById('viewer').addEventListener('click', e => e.currentTarget.close());
   window.addEventListener('hashchange', route);
   route();
+  loadAnalytics();
 
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');

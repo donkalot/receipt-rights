@@ -157,6 +157,12 @@ def test_calendar_reminders_download(page, server):
     page.select_option('#category', 'small_appliance')
     page.fill('#warrantyMonths', '24')
     page.get_by_role('button', name='Save').click()
+    expect(page.locator('#offer')).to_contain_text('before the warranty ends')
+    page.get_by_role('button', name='No thanks').click()
+    expect(page.locator('#offer')).to_have_count(0)
+    assert page.url.endswith('#/item/' + page.url.split('#/item/')[1].split('?')[0])
+    page.reload()
+    expect(page.locator('#offer')).to_have_count(0)
     with page.expect_download() as dl:
         page.get_by_role('button', name='Add reminders to calendar').click()
     assert dl.value.suggested_filename == 'dyson-vacuum-reminders.ics'

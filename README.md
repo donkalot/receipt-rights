@@ -26,8 +26,11 @@ manufacturer.
   the right thing (refund/replacement for major, repair-first for minor, s 259(2)(b) escalation if
   the seller already refused), claims consequential loss (s 259(4)), sets a 14-day deadline and names
   your state's consumer agency. Editable, then copy, email or print to PDF.
-- **Private by design** — everything is stored in the browser (IndexedDB). No account, no server,
-  nothing uploaded. Backup and restore to a JSON file.
+- **Private by design** — receipts, photos and letters are stored in the browser (IndexedDB). No
+  account, no server, never uploaded. Backup and restore to a JSON file.
+- **Analytics** — on the live site only, cookie-free [GoatCounter](https://www.goatcounter.com)
+  counts page views plus fixed action names (`receipt-saved`, `claim-checked`, `letter-copy`, …).
+  Nothing about the item, price or letter is ever sent.
 
 ## Scope and limits
 
