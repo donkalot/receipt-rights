@@ -1,0 +1,16 @@
+{
+  "name": "Receipt Rights",
+  "short_name": "Receipts",
+  "description": "Keep your receipts and claim your rights under the Australian Consumer Law when something breaks.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7faf8",
+  "theme_color": "#2f855a",
+  "categories": ["shopping", "utilities", "finance"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
