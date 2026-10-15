@@ -1,5 +1,5 @@
-const CACHE = 'receipt-rights-v3';
-const APP_SHELL = ['./', './index.html', './acl.js', './reminders.js', './app.js', './manifest.json', './icon.svg', './icon-maskable.svg'];
+const CACHE = 'receipt-rights-v4';
+const APP_SHELL = ['./', './index.html', './acl.js', './reminders.js', './app.js', './manifest.json', './icon.svg', './icon-maskable.svg', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(APP_SHELL)));
