@@ -98,6 +98,25 @@
     s.dataset.goatcounter = ANALYTICS;
     document.head.appendChild(s);
   }
+  const RELAY = 'https://receipt-rights-relay.donkalot.workers.dev';
+  function backupData() {
+    return allItems().then(items => ({ app: 'receipt-rights', version: 1, exportedAt: new Date().toISOString(), profile: loadProfile(), items }));
+  }
+  // Keeps whichever copy of a receipt was edited last, so moving back and forth never loses an edit.
+  async function mergeBackup(data) {
+    if (!data || data.app !== 'receipt-rights' || !Array.isArray(data.items)) throw new Error('not a backup');
+    let n = 0;
+    for (const it of data.items) {
+      if (!it || !it.id) continue;
+      const cur = await getItem(it.id);
+      if (cur && (cur.updatedAt || 0) > (it.updatedAt || 0)) continue;
+      await putItem(it);
+      n++;
+    }
+    if (data.profile && !loadProfile().name) saveProfile(data.profile);
+    return n;
+  }
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   function slug(s) {
     return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item';
   }
@@ -206,7 +225,8 @@
             <a class="btn primary" href="#/item/new">Add a receipt</a>
             <a class="btn" href="#/item/new?claim=1">Something's broken now</a>
           </p>
-          <p class="muted">Your receipts stay on this device and are never uploaded. No account needed.</p>
+          <p class="muted">Your receipts stay on this device. No account needed.</p>
+          <p class="muted">Already using it on another device? <a href="#/settings">Move your receipts here</a>.</p>
         </div>
         ${disclaimer()}`;
       return;
@@ -438,6 +458,7 @@
       }
       d.stillHaveIt = d.stillHaveIt !== 'no';
       item.claim = { answers: d, assessedOn: today() };
+      item.updatedAt = Date.now();
       await putItem(item);
       track('claim-checked');
       go(`#/item/${item.id}/result`);
@@ -528,6 +549,14 @@
         <p class="muted">One file with a reminder before each warranty ends and before each item reaches the age you'd expect it to last. Open it to add them to your calendar.</p>
         <button id="cal-all" type="button">Download reminders for all receipts</button>
       </div>
+      <div class="card" id="move">
+        <h3 style="margin-top:0">Move to another device</h3>
+        <p class="muted">Receipts are saved in this browser only, so your phone and laptop each keep their own. To copy them across, make a link here and open it on the other device. Everything is encrypted before it leaves this device; the link holds the only key, and the scrambled copy is deleted within 24 hours.</p>
+        <div id="send-out"><button id="send" type="button">Make a transfer link</button></div>
+        <label for="paste">Got a link from your other device? <span class="muted">Paste it here</span></label>
+        <div class="row"><input type="text" id="paste" placeholder="https://donkalot.github.io/receipt-rights/#/receive/…" autocomplete="off" style="flex:1"><button id="paste-go" type="button">Receive</button></div>
+        ${isIos() ? `<p class="muted">On iPhone, the app on your home screen keeps separate storage from Safari. If you use it from the home screen, open it there and paste the link rather than scanning the code.</p>` : ''}
+      </div>
       <div class="card">
         <h3 style="margin-top:0">Backup</h3>
         <p class="muted">Your receipts are stored only in this browser. Browsers can clear site data — especially Safari on iPhone if you don't open the app for a while — so download a backup now and then.</p>
@@ -554,9 +583,14 @@
       track('reminders-all');
       toast(`${events.length} reminder${events.length === 1 ? '' : 's'} downloaded`);
     });
+    document.getElementById('send').addEventListener('click', sendTransfer);
+    document.getElementById('paste-go').addEventListener('click', () => {
+      const t = Transfer.parseLink(document.getElementById('paste').value);
+      if (!t) return toast("That doesn't look like a transfer link");
+      go(`#/receive/${t.id}.${t.key}`);
+    });
     document.getElementById('export').addEventListener('click', async () => {
-      download(JSON.stringify({ app: 'receipt-rights', version: 1, exportedAt: new Date().toISOString(), profile: loadProfile(), items: await allItems() }),
-        'application/json', `receipt-rights-backup-${today()}.json`);
+      download(JSON.stringify(await backupData()), 'application/json', `receipt-rights-backup-${today()}.json`);
       localStorage.setItem(BACKUP_KEY, String(Date.now()));
       toast('Backup downloaded');
     });
@@ -564,11 +598,8 @@
       const file = e.target.files[0];
       if (!file) return;
       try {
-        const data = JSON.parse(await file.text());
-        if (data.app !== 'receipt-rights' || !Array.isArray(data.items)) throw new Error('not a backup');
-        for (const it of data.items) if (it && it.id) await putItem(it);
-        if (data.profile && !loadProfile().name) saveProfile(data.profile);
-        toast(`Restored ${data.items.length} receipt${data.items.length === 1 ? '' : 's'}`);
+        const n = await mergeBackup(JSON.parse(await file.text()));
+        toast(`Restored ${plural(n, 'receipt')}`);
         go('#/');
       } catch { toast("That file isn't a Receipt Rights backup"); }
     });
@@ -581,8 +612,112 @@
     });
   }
 
+  function isIos() {
+    return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+  const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  function expiryTime(iso) {
+    return new Date(iso).toLocaleString('en-AU', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  }
+
+  async function sendTransfer() {
+    const $out = document.getElementById('send-out');
+    const btn = document.getElementById('send');
+    const data = await backupData();
+    if (!data.items.length) return toast('No receipts to move yet');
+    btn.disabled = true;
+    btn.textContent = 'Encrypting…';
+    try {
+      const { key, blob } = await Transfer.seal(data);
+      if (blob.length > Transfer.MAX_BYTES) throw new Error('too-big');
+      btn.textContent = 'Uploading…';
+      const res = await fetch(`${RELAY}/t`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob });
+      if (res.status === 413) throw new Error('too-big');
+      if (!res.ok) throw new Error(`relay ${res.status}`);
+      const { id, expiresAt } = await res.json();
+      const link = Transfer.makeLink(location.href.split('#')[0], id, key);
+      const qr = qrcode(0, 'L');
+      qr.addData(link);
+      qr.make();
+      $out.innerHTML = `
+        <div class="notice card" style="margin:0">
+          <p style="margin-top:0"><strong>Scan this with your other device's camera</strong>, or send yourself the link.</p>
+          <div id="qr" style="max-width:240px">${qr.createSvgTag({ cellSize: 4, margin: 16, scalable: true, alt: 'QR code for the transfer link' })}</div>
+          <input type="text" id="link" readonly value="${esc(link)}" style="margin-top:8px">
+          <div class="row" style="margin-top:8px">
+            <button id="copy-link" type="button">Copy link</button>
+            ${navigator.share ? '<button id="share-link" type="button">Share…</button>' : ''}
+            <button id="cancel-link" type="button" class="danger">Delete it now</button>
+          </div>
+          <p class="muted">${plural(data.items.length, 'receipt')}. The link stops working ${esc(expiryTime(expiresAt))}, or once it's been used. Anyone with the link can open your receipts, so only open it on your own device.</p>
+        </div>`;
+      document.getElementById('copy-link').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch { document.getElementById('link').select(); }
+      });
+      const share = document.getElementById('share-link');
+      if (share) share.addEventListener('click', () => navigator.share({ title: 'Receipt Rights transfer', url: link }).catch(() => {}));
+      document.getElementById('cancel-link').addEventListener('click', async () => {
+        await fetch(`${RELAY}/t/${id}`, { method: 'DELETE' }).catch(() => {});
+        $out.innerHTML = '<p class="muted">Deleted. The link no longer works.</p><button id="send" type="button">Make a transfer link</button>';
+        document.getElementById('send').addEventListener('click', sendTransfer);
+      });
+      track('transfer-sent');
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Make a transfer link';
+      toast(err.message === 'too-big'
+        ? 'Too many photos to send in one go. Use "Download backup" and copy the file across instead.'
+        : "Couldn't reach the transfer service. Check your connection and try again.");
+    }
+  }
+
+  async function viewReceive(token) {
+    const t = Transfer.parseLink(`#/receive/${token || ''}`);
+    // Keep the key out of the address bar and history once we've read it.
+    history.replaceState(null, '', location.href.split('#')[0] + '#/receive');
+    const fail = msg => {
+      $app.innerHTML = `<div class="card"><h2>Couldn't move your receipts</h2><p>${msg}</p><a class="btn" href="#/">Back to receipts</a></div>`;
+    };
+    if (!t) return fail('This link is incomplete. Copy the whole link from your other device, or make a new one there.');
+    $app.innerHTML = '<div class="card"><h2>Receiving your receipts…</h2></div>';
+    let data;
+    try {
+      const res = await fetch(`${RELAY}/t/${t.id}`);
+      if (res.status === 404) return fail('This link has expired or has already been used. Make a new one on your other device (Settings, then Move to another device).');
+      if (!res.ok) throw new Error(`relay ${res.status}`);
+      const blob = await res.arrayBuffer();
+      try { data = await Transfer.open(blob, t.key); } catch { return fail("This link couldn't unlock the receipts. Copy the whole link and try again."); }
+    } catch { return fail("Couldn't reach the transfer service. Check your connection and open the link again."); }
+    if (!data || data.app !== 'receipt-rights' || !Array.isArray(data.items)) return fail("That isn't a Receipt Rights transfer.");
+
+    const link = Transfer.makeLink(location.href.split('#')[0], t.id, t.key);
+    const iosBrowser = isIos() && !isStandalone();
+    $app.innerHTML = `
+      <div class="card notice">
+        <h2>${plural(data.items.length, 'receipt')} ready to add</h2>
+        <p>From your other device, sent ${esc(new Date(data.exportedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' }))}. Receipts already here are kept; if both devices have the same receipt, the most recently edited copy wins.</p>
+        ${iosBrowser ? `<p class="muted">These will be saved in Safari. If you use Receipt Rights from your home screen, that app keeps its own storage: copy this link, open the app, and paste it in Settings instead.</p>
+          <div class="row"><button id="copy-link" type="button">Copy link</button></div>` : ''}
+        <div class="row" style="margin-top:12px">
+          <button id="accept" class="primary" type="button">Add them${iosBrowser ? ' to Safari' : ''}</button>
+          <a class="btn" href="#/">Cancel</a>
+        </div>
+      </div>`;
+    const copy = document.getElementById('copy-link');
+    if (copy) copy.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch { toast(link); }
+    });
+    document.getElementById('accept').addEventListener('click', async () => {
+      const n = await mergeBackup(data);
+      fetch(`${RELAY}/t/${t.id}`, { method: 'DELETE' }).catch(() => {});
+      track('transfer-received');
+      toast(`Added ${plural(n, 'receipt')}`);
+      go('#/');
+    });
+  }
+
   function disclaimer() {
-    return `<p class="disclaimer">General information about the Australian Consumer Law, not legal advice. It covers goods bought from a business, not services, and every case depends on its facts. For help, contact your state or territory consumer protection agency or a community legal centre. Your receipts and letters never leave this device; the site counts anonymous visits (no cookies, nothing about your purchases).</p>`;
+    return `<p class="disclaimer">General information about the Australian Consumer Law, not legal advice. It covers goods bought from a business, not services, and every case depends on its facts. For help, contact your state or territory consumer protection agency or a community legal centre. Your receipts and letters stay on this device unless you move them to another one (encrypted first, and deleted from the relay within 24 hours). The site counts anonymous visits (no cookies, nothing about your purchases).</p>`;
   }
 
   // ---------- router ----------
@@ -593,6 +728,7 @@
     window.scrollTo(0, 0);
     try {
       if (parts[0] === 'settings') return viewSettings(params.get('back'));
+      if (parts[0] === 'receive') return await viewReceive(parts[1]);
       if (parts[0] === 'item' && parts[1] === 'new') return await viewEdit(null, params.get('claim') === '1');
       if (parts[0] === 'item' && parts[1]) {
         if (parts[2] === 'edit') return await viewEdit(parts[1], false);

@@ -27,7 +27,12 @@ manufacturer.
   the seller already refused), claims consequential loss (s 259(4)), sets a 14-day deadline and names
   your state's consumer agency. Editable, then copy, email or print to PDF.
 - **Private by design** — receipts, photos and letters are stored in the browser (IndexedDB). No
-  account, no server, never uploaded. Backup and restore to a JSON file.
+  account. Backup and restore to a JSON file.
+- **Move to another device** — Settings makes a link and QR code. The backup is encrypted in the
+  browser (AES-256-GCM) and the ciphertext goes to a tiny relay (`worker/`, Cloudflare Workers + KV)
+  that deletes it after 24 hours or once it's received. The key is only in the link's `#fragment`,
+  which browsers never send to a server, so the relay can't read anything. Merging keeps the most
+  recently edited copy of each receipt.
 - **Analytics** — on the live site only, cookie-free [GoatCounter](https://www.goatcounter.com)
   counts page views plus fixed action names (`receipt-saved`, `claim-checked`, `letter-copy`, …).
   Nothing about the item, price or letter is ever sent.
@@ -43,11 +48,14 @@ last?" are judgement calls, and the app takes your answers at face value.
 - Vanilla JS, no framework, no build step. `acl.js` is the pure legal logic (no DOM); `app.js` is
   the UI.
 - PWA: installable, works offline, network-first service worker so logic fixes reach installed users.
-- Static hosting (GitHub Pages).
+- Static hosting (GitHub Pages). `qrcode.js` is [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
+  2.0.4 (MIT), vendored unchanged.
+- Transfer relay: `worker/index.js`. Deploy with `cd worker && npx wrangler kv namespace create BLOBS`
+  (paste the id into `wrangler.toml`) then `npx wrangler deploy`.
 
 ## Tests
 
 ```
-node --test tests/acl.test.js tests/reminders.test.js   # legal logic, letter, .ics output
-pytest tests/test_smoke.py        # Playwright: add receipt → claim → letter, backup, reminders, XSS
+node --test tests/acl.test.js tests/reminders.test.js tests/transfer.test.js tests/worker.test.mjs
+pytest tests/test_smoke.py        # Playwright: claim → letter, backup, reminders, XSS, two-device transfer
 ```

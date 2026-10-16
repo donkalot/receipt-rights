@@ -176,3 +176,89 @@ def test_calendar_reminders_download(page, server):
         page.get_by_role('button', name='Download reminders for all receipts').click()
     assert dl.value.suggested_filename == 'receipt-rights-reminders.ics'
     assert page.errors == []
+
+
+RELAY = 'https://receipt-rights-relay.donkalot.workers.dev'
+
+
+def stub_relay(ctx, store):
+    """In-memory stand-in for worker/index.js, so the browser-side crypto and flow run for real."""
+    cors = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, DELETE',
+            'Access-Control-Allow-Headers': 'Content-Type'}
+
+    def handle(route):
+        req = route.request
+        path = req.url[len(RELAY):]
+        if req.method == 'OPTIONS':
+            return route.fulfill(status=204, headers=cors)
+        if req.method == 'POST' and path == '/t':
+            blob_id = f'{len(store):022d}'
+            store[blob_id] = req.post_data_buffer
+            return route.fulfill(status=201, headers=cors, json={'id': blob_id, 'expiresAt': '2030-01-01T00:00:00Z'})
+        blob_id = path.removeprefix('/t/')
+        if req.method == 'DELETE':
+            store.pop(blob_id, None)
+            return route.fulfill(status=204, headers=cors)
+        if blob_id in store:
+            return route.fulfill(status=200, headers=cors, body=store[blob_id], content_type='application/octet-stream')
+        return route.fulfill(status=404, headers=cors, json={'error': 'not found'})
+
+    ctx.route(RELAY + '/**', handle)
+
+
+def test_move_to_another_device(browser, server):
+    store = {}
+    devices = []
+    for _ in range(2):
+        ctx = browser.new_context(viewport={'width': 420, 'height': 900}, permissions=['clipboard-read', 'clipboard-write'])
+        stub_relay(ctx, store)
+        pg = ctx.new_page()
+        pg.errors = []
+        pg.on('pageerror', lambda e, pg=pg: pg.errors.append(str(e)))
+        devices.append((ctx, pg))
+    (_, laptop), (_, phone) = devices
+    try:
+        add_kettle(laptop, server)
+        laptop.goto(server + '#/settings')
+        laptop.get_by_role('button', name='Make a transfer link').click()
+        expect(laptop.locator('#qr svg')).to_be_visible()
+        link = laptop.locator('#link').input_value()
+        assert '#/receive/' in link
+        assert len(store) == 1
+        blob = next(iter(store.values()))
+        assert b'Breville' not in blob and b'Harvey' not in blob, 'relay saw plaintext'
+        assert link.split('#')[1].split('.')[1] not in laptop.evaluate('JSON.stringify(performance.getEntries().map(e => e.name))'), \
+            'key reached a request URL'
+
+        phone.goto(server)
+        expect(phone.get_by_role('link', name='Move your receipts here')).to_be_visible()
+        phone.goto(link)
+        expect(phone.locator('h2')).to_have_text('1 receipt ready to add')
+        assert '#/receive' in phone.url and '.' not in phone.url.split('#/receive')[1], 'key left in address bar'
+        phone.get_by_role('button', name='Add them').click()
+        expect(phone.locator('.item .name')).to_have_text(['Breville kettle'])
+        assert phone.locator('.item img.thumb').get_attribute('src').startswith('data:image/jpeg;base64,')
+        expect(phone.locator('.toast')).to_have_text('Added 1 receipt')
+        assert not store, 'blob not deleted after use'
+
+        phone.goto(server + '#/settings')
+        phone.fill('#paste', link)
+        phone.get_by_role('button', name='Receive').click()
+        expect(phone.locator('main')).to_contain_text('expired or has already been used')
+
+        phone.goto(server + '#/settings')
+        phone.fill('#paste', 'https://example.com/nope')
+        phone.get_by_role('button', name='Receive').click()
+        expect(phone.locator('.toast').last).to_have_text("That doesn't look like a transfer link")
+
+        laptop.reload()
+        laptop.get_by_role('button', name='Make a transfer link').click()
+        expect(laptop.locator('#link')).to_be_visible()
+        assert len(store) == 1
+        laptop.get_by_role('button', name='Delete it now').click()
+        expect(laptop.locator('#send-out')).to_contain_text('Deleted')
+        assert not store
+        assert not laptop.errors and not phone.errors, laptop.errors + phone.errors
+    finally:
+        for ctx, _ in devices:
+            ctx.close()

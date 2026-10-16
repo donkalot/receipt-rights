@@ -1,0 +1,10 @@
+name = "receipt-rights-relay"
+main = "index.js"
+compatibility_date = "2026-09-18"
+
+# Encrypted transfer blobs, auto-expired after 24 hours. Create with:
+#   npx wrangler kv namespace create BLOBS
+# and paste the id it prints here.
+[[kv_namespaces]]
+binding = "BLOBS"
+id = "local-placeholder-replaced-on-first-deploy"
