@@ -667,7 +667,7 @@
       btn.textContent = 'Make a transfer link';
       toast(err.message === 'too-big'
         ? 'Too many photos to send in one go. Use "Download backup" and copy the file across instead.'
-        : "Couldn't reach the transfer service. Check your connection and try again.");
+        : "Couldn't reach the transfer service. Some work and school networks block it, so try mobile data, or use Download backup instead.");
     }
   }
 
@@ -687,7 +687,7 @@
       if (!res.ok) throw new Error(`relay ${res.status}`);
       const blob = await res.arrayBuffer();
       try { data = await Transfer.open(blob, t.key); } catch { return fail("This link couldn't unlock the receipts. Copy the whole link and try again."); }
-    } catch { return fail("Couldn't reach the transfer service. Check your connection and open the link again."); }
+    } catch { return fail("Couldn't reach the transfer service. Some work and school networks block it, so try mobile data and open the link again."); }
     if (!data || data.app !== 'receipt-rights' || !Array.isArray(data.items)) return fail("That isn't a Receipt Rights transfer.");
 
     const link = Transfer.makeLink(location.href.split('#')[0], t.id, t.key);
