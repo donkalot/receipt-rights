@@ -7,4 +7,4 @@ compatibility_date = "2026-09-18"
 # and paste the id it prints here.
 [[kv_namespaces]]
 binding = "BLOBS"
-id = "local-placeholder-replaced-on-first-deploy"
+id = "e98aa0f0261d4fb897c4f731633ebae0"
