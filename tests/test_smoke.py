@@ -262,3 +262,22 @@ def test_move_to_another_device(browser, server):
     finally:
         for ctx, _ in devices:
             ctx.close()
+
+
+def test_phone_gets_take_photo_button(browser, server):
+    phone = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
+    pg = phone.new_page()
+    pg.goto(server + '#/item/new')
+    cam = pg.locator('#camera')
+    assert cam.get_attribute('capture') == 'environment'
+    assert pg.locator('#files').get_attribute('capture') is None, 'Choose file must still open the gallery'
+    expect(pg.locator('label:has(#camera)')).to_have_text('Take photo')
+    pg.set_input_files('#camera', files=[{'name': 'snap.png', 'mimeType': 'image/png', 'buffer': PNG}])
+    expect(pg.locator('#photos img')).to_have_count(1)
+    phone.close()
+
+
+def test_desktop_has_no_camera_button(page, server):
+    page.goto(server + '#/item/new')
+    expect(page.locator('#camera')).to_have_count(0)
+    expect(page.locator('label:has(#files)')).to_have_text('Choose file')

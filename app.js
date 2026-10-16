@@ -283,8 +283,11 @@
         </div>
         <label for="notes">Notes <span class="muted">(optional)</span></label>
         <textarea id="notes" name="notes" placeholder="Serial number, extended warranty, where it's kept…">${esc(item.notes)}</textarea>
-        <label for="files">Receipt photos or PDFs <span class="muted">(a bank statement or order email counts too)</span></label>
-        <input type="file" id="files" accept="image/*,application/pdf" multiple capture="environment">
+        <p style="font-weight:600;margin:14px 0 4px">Receipt photos or PDFs <span class="muted" style="font-weight:400">(a bank statement or order email counts too)</span></p>
+        <div class="row">
+          ${matchMedia('(pointer: coarse)').matches ? `<label class="btn primary" style="margin:0;font-weight:400">Take photo<input type="file" id="camera" accept="image/*" capture="environment" class="hidden"></label>` : ''}
+          <label class="btn" style="margin:0;font-weight:400">Choose file<input type="file" id="files" accept="image/*,application/pdf" multiple class="hidden"></label>
+        </div>
         <div class="photos" id="photos"></div>
         <p class="muted hidden" id="err" style="color:var(--bad)"></p>
         <div class="row" style="margin-top:16px">
@@ -298,13 +301,14 @@
       wireAttachmentTiles($photos, photos, rid => { photos = photos.filter(p => p.id !== rid); drawPhotos(); });
     };
     drawPhotos();
-    document.getElementById('files').addEventListener('change', async e => {
+    const addFiles = async e => {
       for (const file of e.target.files) {
         try { photos.push(await fileToAttachment(file)); } catch (err) { toast(err.message); }
       }
       e.target.value = '';
       drawPhotos();
-    });
+    };
+    for (const input of document.querySelectorAll('#camera, #files')) input.addEventListener('change', addFiles);
     document.getElementById('f').addEventListener('submit', async e => {
       e.preventDefault();
       const d = formData(e.target);
