@@ -721,7 +721,7 @@
   }
 
   function disclaimer() {
-    return `<p class="disclaimer">General information about the Australian Consumer Law, not legal advice. It covers goods bought from a business, not services, and every case depends on its facts. For help, contact your state or territory consumer protection agency or a community legal centre. Your receipts and letters stay on this device unless you move them to another one (encrypted first, and deleted from the relay within 24 hours). The site counts anonymous visits (no cookies, nothing about your purchases).</p>`;
+    return `<p class="disclaimer">General information about the Australian Consumer Law, not legal advice. It covers goods bought from a business, not services, and every case depends on its facts. For help, contact your state or territory consumer protection agency or a community legal centre. Your receipts and letters stay on this device unless you move them to another one (encrypted first, and deleted from the relay within 24 hours). The site counts anonymous visits (no cookies, nothing about your purchases). <a href="guides/">Plain-English guides</a>.</p>`;
   }
 
   // ---------- router ----------
